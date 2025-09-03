@@ -1,19 +1,39 @@
 from fastapi import FastAPI, HTTPException, Depends, Security
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 from datetime import datetime, date
 import json
 import os
+import requests
 
 app = FastAPI(title="Banking AI Agent API", version="1.0.0")
 security = HTTPBearer()
+
+# Add CORS middleware for frontend requests
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # In production, replace with your domain
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Environment variables for ElevenLabs
+ELEVENLABS_API_KEY = os.environ.get("ELEVENLABS_API_KEY", "your_api_key_here")
+ELEVENLABS_AGENT_ID = os.environ.get("ELEVENLABS_AGENT_ID", "your_agent_id_here")
 
 # Pydantic Models for Request/Response
 class CustomerAuth(BaseModel):
     phone_number: str
     pin: Optional[str] = None
+
+class CallRequest(BaseModel):
+    phone_number: str
+    customer_id: Optional[str] = None
 
 class AccountInfo(BaseModel):
     account_number: str
@@ -32,7 +52,7 @@ class Transaction(BaseModel):
     balance_after: float
     merchant: Optional[str] = None
 
-# Sample Banking Data (same as before)
+# Sample Banking Data
 SAMPLE_CUSTOMERS = {
     "CUST001": {
         "customer_id": "CUST001",
@@ -121,6 +141,37 @@ SAMPLE_CUSTOMERS = {
         ],
         "loans": [],
         "credit_cards": []
+    },
+    # Add an Indian customer for testing
+    "CUST003": {
+        "customer_id": "CUST003",
+        "name": "Rahul Sharma",
+        "phone": "+919876543210",
+        "email": "rahul.sharma@email.com",
+        "accounts": [
+            {
+                "account_number": "ACC111222333",
+                "account_type": "Savings",
+                "balance": 85000.00,
+                "currency": "INR",
+                "status": "Active",
+                "opened_date": "2021-01-10"
+            }
+        ],
+        "transactions": [
+            {
+                "transaction_id": "TXN005",
+                "account_number": "ACC111222333",
+                "date": "2025-09-02T15:30:00",
+                "amount": -5000.00,
+                "description": "UPI Payment",
+                "type": "debit",
+                "balance_after": 85000.00,
+                "merchant": "PhonePe"
+            }
+        ],
+        "loans": [],
+        "credit_cards": []
     }
 }
 
@@ -141,7 +192,7 @@ BANKING_KNOWLEDGE = {
     }
 }
 
-# Authentication function
+# Authentication function (for agent endpoints only)
 async def verify_agent_token(credentials: HTTPAuthorizationCredentials = Security(security)):
     expected_token = "banking_agent_secure_token_2025"
     if credentials.credentials != expected_token:
@@ -153,9 +204,15 @@ async def verify_agent_token(credentials: HTTPAuthorizationCredentials = Securit
 async def root():
     return {"message": "Banking API is running!", "status": "healthy"}
 
+# Serve the HTML file at the root
+@app.get("/index.html")
+async def get_index():
+    return FileResponse("static/index.html")
+
+# PUBLIC ENDPOINT - No authentication required for frontend
 @app.post("/authenticate_customer")
-async def authenticate_customer(auth_data: CustomerAuth, token: str = Depends(verify_agent_token)):
-    """Authenticate customer using phone number"""
+async def authenticate_customer(auth_data: CustomerAuth):
+    """Authenticate customer using phone number (public endpoint for frontend)"""
     for customer_id, customer in SAMPLE_CUSTOMERS.items():
         if customer["phone"] == auth_data.phone_number:
             return {
@@ -166,6 +223,116 @@ async def authenticate_customer(auth_data: CustomerAuth, token: str = Depends(ve
             }
     raise HTTPException(status_code=404, detail="Customer not found")
 
+# PUBLIC ENDPOINT - Make call through ElevenLabs
+@app.post("/make_call")
+async def make_call(call_data: CallRequest):
+    """Initiate a call through ElevenLabs agent"""
+    try:
+        print(f"Making call to {call_data.phone_number} with customer_id: {call_data.customer_id}")
+        
+        # Check if we have valid ElevenLabs credentials
+        if ELEVENLABS_API_KEY == "your_api_key_here" or ELEVENLABS_AGENT_ID == "your_agent_id_here":
+            # Return mock response for testing
+            return {
+                "success": True,
+                "message": f"Mock call initiated to {call_data.phone_number}",
+                "call_id": f"MOCK_CALL_{int(datetime.now().timestamp())}",
+                "status": "initiated",
+                "note": "This is a mock response. Set ELEVENLABS_API_KEY and ELEVENLABS_AGENT_ID environment variables for real calls."
+            }
+        
+        # Real ElevenLabs API call
+        url = f"https://api.elevenlabs.io/v1/convai/agents/{ELEVENLABS_AGENT_ID}/call"
+        
+        headers = {
+            "xi-api-key": ELEVENLABS_API_KEY,
+            "Content-Type": "application/json"
+        }
+        
+        # Prepare customer data if available
+        customer_context = {}
+        if call_data.customer_id:
+            customer = SAMPLE_CUSTOMERS.get(call_data.customer_id)
+            if customer:
+                customer_context = {
+                    "customer_name": customer["name"],
+                    "customer_id": call_data.customer_id,
+                    "phone_number": call_data.phone_number
+                }
+        
+        # Payload for ElevenLabs API
+        payload = {
+            "phone_number": call_data.phone_number,
+            "context": customer_context
+        }
+        
+        print(f"Calling ElevenLabs API with payload: {payload}")
+        
+        # Make the API call to ElevenLabs
+        response = requests.post(url, headers=headers, json=payload, timeout=30)
+        
+        print(f"ElevenLabs response status: {response.status_code}")
+        print(f"ElevenLabs response: {response.text}")
+        
+        if response.status_code == 200:
+            elevenlabs_response = response.json()
+            return {
+                "success": True,
+                "message": f"Call initiated to {call_data.phone_number}",
+                "call_id": elevenlabs_response.get("call_id", f"EL_CALL_{int(datetime.now().timestamp())}"),
+                "status": "initiated",
+                "elevenlabs_response": elevenlabs_response
+            }
+        else:
+            error_detail = response.text
+            print(f"ElevenLabs API error: {error_detail}")
+            raise HTTPException(
+                status_code=response.status_code, 
+                detail=f"ElevenLabs API error: {error_detail}"
+            )
+            
+    except requests.exceptions.RequestException as e:
+        print(f"Network error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Network error: {str(e)}")
+    except Exception as e:
+        print(f"Call error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to initiate call: {str(e)}")
+
+# Optional: Add endpoint to check call status
+@app.get("/call_status/{call_id}")
+async def get_call_status(call_id: str):
+    """Get the status of a call"""
+    try:
+        if call_id.startswith("MOCK_"):
+            return {
+                "success": True,
+                "call_data": {
+                    "call_id": call_id,
+                    "status": "completed",
+                    "duration": 120,
+                    "note": "This is mock call status data"
+                }
+            }
+            
+        url = f"https://api.elevenlabs.io/v1/convai/calls/{call_id}"
+        headers = {
+            "xi-api-key": ELEVENLABS_API_KEY,
+        }
+        
+        response = requests.get(url, headers=headers, timeout=10)
+        
+        if response.status_code == 200:
+            return {
+                "success": True,
+                "call_data": response.json()
+            }
+        else:
+            raise HTTPException(status_code=response.status_code, detail=response.text)
+            
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get call status: {str(e)}")
+
+# PROTECTED ENDPOINTS - Require authentication for agent access
 @app.get("/customer/{customer_id}/accounts")
 async def get_customer_accounts(customer_id: str, token: str = Depends(verify_agent_token)):
     """Get all accounts for a customer"""
@@ -215,8 +382,7 @@ async def get_fee_information(token: str = Depends(verify_agent_token)):
     """Get current fee structure"""
     return BANKING_KNOWLEDGE["fees"]
 
-# Mount the static files directory (moved here to ensure API routes take priority)
-# At the end of route definitions
+# Mount the static files directory
 app.mount("/static", StaticFiles(directory="static", html=True), name="static")
 
 # For Railway deployment
@@ -224,4 +390,6 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8080))
     print(f"Starting server on port {port}")
+    print(f"ElevenLabs API Key: {'Set' if ELEVENLABS_API_KEY != 'your_api_key_here' else 'Not Set'}")
+    print(f"ElevenLabs Agent ID: {'Set' if ELEVENLABS_AGENT_ID != 'your_agent_id_here' else 'Not Set'}")
     uvicorn.run(app, host="0.0.0.0", port=port)

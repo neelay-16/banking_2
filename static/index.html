@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Banking Agent Interface</title>
+  <style>
+    body { font-family: Arial, sans-serif; text-align: center; margin-top: 50px; }
+    .container { max-width: 500px; margin: auto; }
+    select, input, button { padding: 10px; margin: 5px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>Banking Assistant</h2>
+    <select id="language">
+      <option value="en-US">English (US)</option>
+      <option value="es-ES">Spanish</option>
+      <option value="fr-FR">French</option>
+    </select>
+    <input type="text" id="phoneNumber" placeholder="Enter phone number (e.g., +1234567890)" required>
+    <button onclick="startConversation()">Call Agent</button>
+    <div id="response" style="margin-top: 20px;"></div>
+  </div>
+
+  <script>
+    const apiUrl = 'https://web-production-5bfc.up.railway.app';
+    const authEndpoint = '/authenticate_customer';
+    const accountsEndpoint = '/customer/{customer_id}/accounts';
+
+    async function authenticate(phoneNumber) {
+      const response = await fetch(`${apiUrl}${authEndpoint}`, {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Bearer banking_agent_secure_token_2025',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ phone_number: phoneNumber })
+      });
+      if (!response.ok) throw new Error('Authentication failed');
+      return response.json();
+    }
+
+    async function getAccounts(customerId) {
+      const response = await fetch(`${apiUrl}${accountsEndpoint.replace('{customer_id}', customerId)}`, {
+        method: 'GET',
+        headers: {
+          'Authorization': 'Bearer banking_agent_secure_token_2025'
+        }
+      });
+      if (!response.ok) throw new Error('Failed to fetch accounts');
+      return response.json();
+    }
+
+    function speak(text, lang) {
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = lang;
+      utterance.volume = 1; // 0 to 1
+      utterance.rate = 1; // Speed
+      utterance.pitch = 1; // Pitch
+      window.speechSynthesis.speak(utterance);
+    }
+
+    async function startConversation() {
+      const phoneNumber = document.getElementById('phoneNumber').value;
+      const lang = document.getElementById('language').value;
+      const responseDiv = document.getElementById('response');
+
+      if (!phoneNumber) {
+        responseDiv.innerText = 'Please enter a phone number.';
+        speak('Please enter a phone number.', lang);
+        return;
+      }
+
+      try {
+        responseDiv.innerText = 'Authenticating...';
+        speak('Authenticating, please wait.', lang);
+        const authResult = await authenticate(phoneNumber);
+        const customerId = authResult.customer_id;
+        const customerName = authResult.name;
+
+        responseDiv.innerText = `Welcome, ${customerName}!`;
+        speak(`Welcome, ${customerName}! Fetching your balances.`, lang);
+
+        const accountsResult = await getAccounts(customerId);
+        const balances = accountsResult.accounts.map(acc => `${acc.account_type} balance: ${acc.balance} ${acc.currency}`).join(', ');
+        responseDiv.innerText += `\n${balances}`;
+        speak(`Your account balances are: ${balances}.`, lang);
+
+      } catch (error) {
+        responseDiv.innerText = `Error: ${error.message}`;
+        speak(`Sorry, an error occurred: ${error.message}. Please try again.`, lang);
+      }
+    }
+  </script>
+</body>
+</html>

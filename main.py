@@ -1,0 +1,226 @@
+from fastapi import FastAPI, HTTPException, Depends, Security
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
+from typing import List, Optional, Dict, Any
+from datetime import datetime, date
+import json
+import os
+
+app = FastAPI(title="Banking AI Agent API", version="1.0.0")
+security = HTTPBearer()
+
+# Mount the static files directory
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# Pydantic Models for Request/Response
+class CustomerAuth(BaseModel):
+    phone_number: str
+    pin: Optional[str] = None
+
+class AccountInfo(BaseModel):
+    account_number: str
+    account_type: str
+    balance: float
+    currency: str
+    status: str
+    opened_date: date
+
+class Transaction(BaseModel):
+    transaction_id: str
+    date: datetime
+    amount: float
+    description: str
+    type: str
+    balance_after: float
+    merchant: Optional[str] = None
+
+# Sample Banking Data (same as before)
+SAMPLE_CUSTOMERS = {
+    "CUST001": {
+        "customer_id": "CUST001",
+        "name": "John Smith",
+        "phone": "+1234567890",
+        "email": "john.smith@email.com",
+        "accounts": [
+            {
+                "account_number": "ACC123456789",
+                "account_type": "Savings",
+                "balance": 15750.50,
+                "currency": "USD",
+                "status": "Active",
+                "opened_date": "2020-03-15"
+            },
+            {
+                "account_number": "ACC987654321",
+                "account_type": "Checking",
+                "balance": 3250.75,
+                "currency": "USD",
+                "status": "Active",
+                "opened_date": "2020-03-15"
+            }
+        ],
+        "transactions": [
+            {
+                "transaction_id": "TXN001",
+                "account_number": "ACC123456789",
+                "date": "2025-09-01T10:30:00",
+                "amount": -50.00,
+                "description": "ATM Withdrawal",
+                "type": "debit",
+                "balance_after": 15750.50,
+                "merchant": "Chase ATM #1234"
+            },
+            {
+                "transaction_id": "TXN002",
+                "account_number": "ACC123456789",
+                "date": "2025-08-30T14:22:00",
+                "amount": 2500.00,
+                "description": "Salary Deposit",
+                "type": "credit",
+                "balance_after": 15800.50,
+                "merchant": "ABC Corp Payroll"
+            }
+        ],
+        "loans": [
+            {
+                "loan_id": "LOAN001",
+                "loan_type": "Home Mortgage",
+                "principal_amount": 250000.00,
+                "outstanding_balance": 187500.00,
+                "monthly_payment": 1850.00,
+                "next_due_date": "2025-09-15",
+                "interest_rate": 3.5
+            }
+        ],
+        "credit_cards": []
+    },
+    "CUST002": {
+        "customer_id": "CUST002",
+        "name": "Sarah Johnson",
+        "phone": "+1987654321",
+        "email": "sarah.johnson@email.com",
+        "accounts": [
+            {
+                "account_number": "ACC555666777",
+                "account_type": "Checking",
+                "balance": 8900.25,
+                "currency": "USD",
+                "status": "Active",
+                "opened_date": "2019-07-10"
+            }
+        ],
+        "transactions": [
+            {
+                "transaction_id": "TXN004",
+                "account_number": "ACC555666777",
+                "date": "2025-09-02T08:45:00",
+                "amount": -75.50,
+                "description": "Utility Bill Payment",
+                "type": "debit",
+                "balance_after": 8900.25,
+                "merchant": "City Electric Company"
+            }
+        ],
+        "loans": [],
+        "credit_cards": []
+    }
+}
+
+# Banking Knowledge Base
+BANKING_KNOWLEDGE = {
+    "account_types": {
+        "savings": "Savings accounts earn interest and are ideal for long-term savings goals.",
+        "checking": "Checking accounts are designed for daily transactions and bill payments."
+    },
+    "fees": {
+        "atm_withdrawal": "$2.50 for out-of-network ATMs",
+        "overdraft": "$35.00 per overdraft transaction",
+        "wire_transfer": "$25.00 domestic, $45.00 international"
+    },
+    "hours": {
+        "branches": "Monday-Friday: 9:00 AM - 5:00 PM, Saturday: 9:00 AM - 2:00 PM",
+        "customer_service": "24/7 phone support available"
+    }
+}
+
+# Authentication function
+async def verify_agent_token(credentials: HTTPAuthorizationCredentials = Security(security)):
+    expected_token = "banking_agent_secure_token_2025"
+    if credentials.credentials != expected_token:
+        raise HTTPException(status_code=401, detail="Invalid authentication token")
+    return credentials.credentials
+
+# API Endpoints
+@app.get("/")
+async def root():
+    return {"message": "Banking API is running!", "status": "healthy"}
+
+@app.post("/authenticate_customer")
+async def authenticate_customer(auth_data: CustomerAuth, token: str = Depends(verify_agent_token)):
+    """Authenticate customer using phone number"""
+    for customer_id, customer in SAMPLE_CUSTOMERS.items():
+        if customer["phone"] == auth_data.phone_number:
+            return {
+                "success": True,
+                "customer_id": customer_id,
+                "name": customer["name"],
+                "message": f"Welcome back, {customer['name']}!"
+            }
+    raise HTTPException(status_code=404, detail="Customer not found")
+
+@app.get("/customer/{customer_id}/accounts")
+async def get_customer_accounts(customer_id: str, token: str = Depends(verify_agent_token)):
+    """Get all accounts for a customer"""
+    if customer_id not in SAMPLE_CUSTOMERS:
+        raise HTTPException(status_code=404, detail="Customer not found")
+    customer = SAMPLE_CUSTOMERS[customer_id]
+    accounts = customer["accounts"]
+    return {
+        "success": True,
+        "customer_name": customer["name"],
+        "accounts": accounts
+    }
+
+@app.get("/customer/{customer_id}/transactions")
+async def get_recent_transactions(customer_id: str, limit: int = 5, token: str = Depends(verify_agent_token)):
+    """Get recent transactions for customer"""
+    if customer_id not in SAMPLE_CUSTOMERS:
+        raise HTTPException(status_code=404, detail="Customer not found")
+    customer = SAMPLE_CUSTOMERS[customer_id]
+    transactions = customer["transactions"]
+    sorted_transactions = sorted(transactions, key=lambda x: x["date"], reverse=True)[:limit]
+    return {
+        "success": True,
+        "customer_name": customer["name"],
+        "transactions": sorted_transactions
+    }
+
+@app.get("/customer/{customer_id}/loans")
+async def get_customer_loans(customer_id: str, token: str = Depends(verify_agent_token)):
+    """Get all loans for a customer"""
+    if customer_id not in SAMPLE_CUSTOMERS:
+        raise HTTPException(status_code=404, detail="Customer not found")
+    customer = SAMPLE_CUSTOMERS[customer_id]
+    return {
+        "success": True,
+        "customer_name": customer["name"],
+        "loans": customer["loans"]
+    }
+
+@app.get("/knowledge/hours")
+async def get_banking_hours(token: str = Depends(verify_agent_token)):
+    """Get branch and service hours"""
+    return BANKING_KNOWLEDGE["hours"]
+
+@app.get("/knowledge/fees")
+async def get_fee_information(token: str = Depends(verify_agent_token)):
+    """Get current fee structure"""
+    return BANKING_KNOWLEDGE["fees"]
+
+# For Railway deployment
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.environ.get("PORT", 8080))
+    print(f"Starting server on port {port}")
+    uvicorn.run(app, host="0.0.0.0", port=port)

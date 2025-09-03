@@ -85,6 +85,13 @@
     .test-btn:hover {
       background: linear-gradient(45deg, #2f3542, #3742fa);
     }
+    .debug-btn {
+      background: linear-gradient(45deg, #ffa502, #ff6348);
+      font-size: 12px;
+      padding: 8px 16px;
+      width: auto;
+      margin: 5px;
+    }
     .response {
       margin-top: 30px;
       padding: 20px;
@@ -94,6 +101,8 @@
       text-align: left;
       min-height: 50px;
       display: none;
+      max-height: 400px;
+      overflow-y: auto;
     }
     .response.show {
       display: block;
@@ -130,20 +139,37 @@
       0% { transform: rotate(0deg); }
       100% { transform: rotate(360deg); }
     }
+    .debug-info {
+      font-size: 12px;
+      background: rgba(0, 0, 0, 0.2);
+      padding: 10px;
+      border-radius: 5px;
+      margin: 10px 0;
+      text-align: left;
+      font-family: monospace;
+    }
   </style>
 </head>
 <body>
   <div class="container">
     <h2>🏦 Banking Assistant</h2>
     
+    <div class="debug-info">
+      <strong>API URL:</strong> <span id="currentApiUrl"></span><br>
+      <strong>Status:</strong> <span id="connectionStatus">Checking...</span>
+    </div>
+    
     <select id="language">
       <option value="en-US">English (US)</option>
       <option value="hi-IN">Hindi (India)</option>
     </select>
     
-    <input type="tel" id="phoneNumber" placeholder="Enter phone number (e.g., +919876543210)" required>
+    <input type="tel" id="phoneNumber" placeholder="Enter phone number (e.g., +919407856555)" value="+919407856555" required>
     
     <div class="button-container">
+      <button class="debug-btn" onclick="checkConnection()">Test Connection</button>
+      <button class="debug-btn" onclick="listRoutes()">List Routes</button>
+      <br>
       <button class="test-btn" onclick="testAuthentication()">Test Auth</button>
       <button class="call-btn" onclick="makePhoneCall()" id="callButton">📞 Call Agent</button>
     </div>
@@ -158,15 +184,17 @@
   </div>
 
   <script>
+    // CHANGE THIS TO YOUR ACTUAL RAILWAY URL
     const apiUrl = 'https://web-production-5bfc.up.railway.app';
+    
+    // Display current API URL
+    document.getElementById('currentApiUrl').textContent = apiUrl;
     
     // API endpoints
     const authEndpoint = '/authenticate_customer';
     const callEndpoint = '/make_call';
-    const accountsEndpoint = '/customer/{customer_id}/accounts';
 
     function isValidPhoneNumber(phone) {
-      // Support multiple formats: +919876543210, +1234567890
       const phoneRegex = /^\+[1-9]\d{10,14}$/;
       return phoneRegex.test(phone);
     }
@@ -191,13 +219,54 @@
       }
     }
 
-    // Test authentication only (for debugging)
+    // Check basic connection to the API
+    async function checkConnection() {
+      try {
+        showLoading(true);
+        const response = await fetch(`${apiUrl}/`);
+        if (response.ok) {
+          const data = await response.json();
+          document.getElementById('connectionStatus').textContent = 'Connected ✅';
+          showResponse(`<div class="success">✅ API Connection Successful!</div>Message: ${data.message}<br>Status: ${data.status}`);
+        } else {
+          throw new Error(`HTTP ${response.status}`);
+        }
+      } catch (error) {
+        document.getElementById('connectionStatus').textContent = 'Failed ❌';
+        showResponse(`❌ Connection Failed: ${error.message}`, true);
+      } finally {
+        showLoading(false);
+      }
+    }
+
+    // List available routes for debugging
+    async function listRoutes() {
+      try {
+        showLoading(true);
+        const response = await fetch(`${apiUrl}/debug/routes`);
+        if (response.ok) {
+          const data = await response.json();
+          let routeList = '<div class="success">✅ Available Routes:</div>';
+          data.routes.forEach(route => {
+            routeList += `<strong>${route.methods.join(', ')}</strong> ${route.path}<br>`;
+          });
+          showResponse(routeList);
+        } else {
+          throw new Error(`HTTP ${response.status}`);
+        }
+      } catch (error) {
+        showResponse(`❌ Failed to list routes: ${error.message}`, true);
+      } finally {
+        showLoading(false);
+      }
+    }
+
+    // Test authentication with detailed logging
     async function testAuthentication() {
       const phoneNumber = document.getElementById('phoneNumber').value.trim();
-      const lang = document.getElementById('language').value;
 
       if (!isValidPhoneNumber(phoneNumber)) {
-        showResponse('Please enter a valid phone number (e.g., +919876543210)', true);
+        showResponse('Please enter a valid phone number (e.g., +919407856555)', true);
         return;
       }
 
@@ -205,38 +274,35 @@
         showLoading(true);
         showResponse('Authenticating...', false);
 
-        // Try authentication without Bearer token first
-        let response = await fetch(`${apiUrl}${authEndpoint}`, {
+        console.log('Attempting authentication with:', phoneNumber);
+
+        const response = await fetch(`${apiUrl}${authEndpoint}`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json'
           },
-          body: JSON.stringify({ phone_number: phoneNumber })
+          body: JSON.stringify({ 
+            phone_number: phoneNumber,
+            pin: null 
+          })
         });
 
-        if (!response.ok) {
-          // If that fails, try with Bearer token
-          response = await fetch(`${apiUrl}${authEndpoint}`, {
-            method: 'POST',
-            headers: {
-              'Authorization': 'Bearer banking_agent_secure_token_2025',
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ phone_number: phoneNumber })
-          });
-        }
+        console.log('Auth response status:', response.status);
+        const responseText = await response.text();
+        console.log('Auth response body:', responseText);
 
         if (!response.ok) {
-          throw new Error(`Authentication failed: ${response.status} ${response.statusText}`);
+          throw new Error(`Authentication failed: ${response.status} - ${responseText}`);
         }
 
-        const authResult = await response.json();
+        const authResult = JSON.parse(responseText);
         
         showResponse(`
           <div class="success">✅ Authentication Successful!</div>
           <strong>Customer:</strong> ${authResult.name}<br>
           <strong>Customer ID:</strong> ${authResult.customer_id}<br>
-          <strong>Message:</strong> ${authResult.message}
+          <strong>Message:</strong> ${authResult.message}<br>
+          <strong>Phone:</strong> ${phoneNumber}
         `);
 
       } catch (error) {
@@ -250,10 +316,9 @@
     // Make actual phone call through ElevenLabs
     async function makePhoneCall() {
       const phoneNumber = document.getElementById('phoneNumber').value.trim();
-      const lang = document.getElementById('language').value;
 
       if (!isValidPhoneNumber(phoneNumber)) {
-        showResponse('Please enter a valid phone number (e.g., +919876543210)', true);
+        showResponse('Please enter a valid phone number (e.g., +919407856555)', true);
         return;
       }
 
@@ -261,7 +326,7 @@
         showLoading(true);
         showResponse('Initiating call through ElevenLabs...', false);
 
-        // First authenticate the customer (optional)
+        // First authenticate the customer
         let customerId = null;
         try {
           const authResponse = await fetch(`${apiUrl}${authEndpoint}`, {
@@ -269,18 +334,24 @@
             headers: {
               'Content-Type': 'application/json'
             },
-            body: JSON.stringify({ phone_number: phoneNumber })
+            body: JSON.stringify({ 
+              phone_number: phoneNumber,
+              pin: null 
+            })
           });
 
           if (authResponse.ok) {
             const authResult = await authResponse.json();
             customerId = authResult.customer_id;
+            console.log('Authentication successful, customer ID:', customerId);
           }
         } catch (authError) {
-          console.log('Authentication failed, proceeding without customer ID');
+          console.log('Authentication failed, proceeding without customer ID:', authError);
         }
 
         // Make the call
+        console.log('Making call with data:', { phone_number: phoneNumber, customer_id: customerId });
+        
         const callResponse = await fetch(`${apiUrl}${callEndpoint}`, {
           method: 'POST',
           headers: {
@@ -292,22 +363,26 @@
           })
         });
 
+        console.log('Call response status:', callResponse.status);
+        const callResponseText = await callResponse.text();
+        console.log('Call response body:', callResponseText);
+
         if (!callResponse.ok) {
-          const errorText = await callResponse.text();
-          throw new Error(`Call failed: ${callResponse.status} - ${errorText}`);
+          throw new Error(`Call failed: ${callResponse.status} - ${callResponseText}`);
         }
 
-        const callResult = await callResponse.json();
+        const callResult = JSON.parse(callResponseText);
         
         showResponse(`
-          <div class="success">📞 Call Initiated Successfully!</div>
+          <div class="success">📞 Call Request Processed!</div>
           <strong>Phone Number:</strong> ${phoneNumber}<br>
           <strong>Call ID:</strong> ${callResult.call_id || 'N/A'}<br>
           <strong>Status:</strong> ${callResult.status}<br>
           <strong>Message:</strong> ${callResult.message}<br>
-          ${customerId ? `<strong>Customer ID:</strong> ${customerId}` : ''}
-          <br><br>
-          <em>The AI agent should call you shortly at ${phoneNumber}</em>
+          ${customerId ? `<strong>Customer ID:</strong> ${customerId}<br>` : ''}
+          ${callResult.note ? `<div style="margin-top: 10px; padding: 10px; background: rgba(255, 193, 7, 0.2); border-radius: 5px;"><strong>Note:</strong> ${callResult.note}</div>` : ''}
+          <br>
+          <em>${callResult.success ? 'The AI agent should call you shortly!' : 'Please check the logs for details.'}</em>
         `);
 
       } catch (error) {
@@ -318,25 +393,16 @@
       }
     }
 
-    // Optional: Add call status checking
-    async function checkCallStatus(callId) {
-      try {
-        const response = await fetch(`${apiUrl}/call_status/${callId}`);
-        if (response.ok) {
-          const statusData = await response.json();
-          console.log('Call status:', statusData);
-          return statusData;
-        }
-      } catch (error) {
-        console.error('Failed to check call status:', error);
-      }
-    }
-
     // Handle Enter key press
     document.getElementById('phoneNumber').addEventListener('keypress', function(e) {
       if (e.key === 'Enter') {
         makePhoneCall();
       }
+    });
+
+    // Check connection on page load
+    window.addEventListener('load', function() {
+      checkConnection();
     });
   </script>
 </body>

@@ -1,24 +1,14 @@
-from fastapi import FastAPI, HTTPException, Depends, Security, Request
+from fastapi import FastAPI, HTTPException, Depends, Security
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 from datetime import datetime, date
 import json
 import os
 
-# Initialize the app
 app = FastAPI(title="Banking AI Agent API", version="1.0.0")
 security = HTTPBearer()
-
-# Mount the static files directory. 
-# This serves files like CSS, JS, images, and your index.html.
-app.mount("/static", StaticFiles(directory="static"), name="static")
-
-# Initialize Jinja2Templates for serving HTML files from the "static" directory
-templates = Jinja2Templates(directory="static")
 
 # Pydantic Models for Request/Response
 class CustomerAuth(BaseModel):
@@ -159,11 +149,9 @@ async def verify_agent_token(credentials: HTTPAuthorizationCredentials = Securit
     return credentials.credentials
 
 # API Endpoints
-
-# NEW: Route to serve the index.html file at the root URL ("/")
-@app.get("/", response_class=HTMLResponse)
-async def serve_index(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request})
+@app.get("/")
+async def root():
+    return {"message": "Banking API is running!", "status": "healthy"}
 
 @app.post("/authenticate_customer")
 async def authenticate_customer(auth_data: CustomerAuth, token: str = Depends(verify_agent_token)):
@@ -196,7 +184,7 @@ async def get_recent_transactions(customer_id: str, limit: int = 5, token: str =
     """Get recent transactions for customer"""
     if customer_id not in SAMPLE_CUSTOMERS:
         raise HTTPException(status_code=404, detail="Customer not found")
-    customer = SAMPLE_CUSTOMers[customer_id]
+    customer = SAMPLE_CUSTOMERS[customer_id]
     transactions = customer["transactions"]
     sorted_transactions = sorted(transactions, key=lambda x: x["date"], reverse=True)[:limit]
     return {
@@ -226,6 +214,9 @@ async def get_banking_hours(token: str = Depends(verify_agent_token)):
 async def get_fee_information(token: str = Depends(verify_agent_token)):
     """Get current fee structure"""
     return BANKING_KNOWLEDGE["fees"]
+
+# Mount the static files directory (moved here to ensure API routes take priority)
+app.mount("/", StaticFiles(directory="static", html=True), name="static")
 
 # For Railway deployment
 if __name__ == "__main__":

@@ -5,101 +5,339 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Banking Assistant</title>
   <style>
-    body { font-family: Arial, sans-serif; text-align: center; margin-top: 50px; }
-    .container { max-width: 500px; margin: auto; }
-    select, input, button { padding: 10px; margin: 5px; }
-    .error { color: red; display: none; }
+    body { 
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+      text-align: center; 
+      margin: 0;
+      padding: 20px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      color: white;
+    }
+    .container { 
+      max-width: 500px; 
+      margin: auto; 
+      background: rgba(255, 255, 255, 0.1);
+      backdrop-filter: blur(10px);
+      border-radius: 20px;
+      padding: 40px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+    }
+    h2 {
+      margin-bottom: 30px;
+      font-size: 2.5em;
+      font-weight: 300;
+    }
+    select, input, button { 
+      padding: 15px; 
+      margin: 10px; 
+      border: none;
+      border-radius: 10px;
+      font-size: 16px;
+      width: 80%;
+      max-width: 300px;
+    }
+    select, input {
+      background: rgba(255, 255, 255, 0.2);
+      color: white;
+      backdrop-filter: blur(5px);
+    }
+    select option {
+      background: #333;
+      color: white;
+    }
+    input::placeholder {
+      color: rgba(255, 255, 255, 0.7);
+    }
+    button { 
+      background: linear-gradient(45deg, #ff6b6b, #ee5a24);
+      color: white;
+      font-weight: bold;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      border: 2px solid transparent;
+    }
+    button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+      background: linear-gradient(45deg, #ee5a24, #ff6b6b);
+    }
+    button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
+    }
+    .button-container {
+      margin: 20px 0;
+    }
+    .call-btn {
+      background: linear-gradient(45deg, #10ac84, #1dd1a1);
+    }
+    .call-btn:hover {
+      background: linear-gradient(45deg, #1dd1a1, #10ac84);
+    }
+    .test-btn {
+      background: linear-gradient(45deg, #3742fa, #2f3542);
+      font-size: 14px;
+      padding: 10px 20px;
+      width: auto;
+    }
+    .test-btn:hover {
+      background: linear-gradient(45deg, #2f3542, #3742fa);
+    }
+    .response {
+      margin-top: 30px;
+      padding: 20px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 15px;
+      backdrop-filter: blur(5px);
+      text-align: left;
+      min-height: 50px;
+      display: none;
+    }
+    .response.show {
+      display: block;
+    }
+    .error { 
+      color: #ff6b6b; 
+      background: rgba(255, 107, 107, 0.1);
+      padding: 15px;
+      border-radius: 10px;
+      margin: 10px 0;
+      display: none;
+    }
+    .success {
+      color: #1dd1a1;
+      background: rgba(29, 209, 161, 0.1);
+      padding: 15px;
+      border-radius: 10px;
+      margin: 10px 0;
+    }
+    .loading {
+      display: none;
+      margin: 20px 0;
+    }
+    .spinner {
+      border: 3px solid rgba(255, 255, 255, 0.3);
+      border-top: 3px solid white;
+      border-radius: 50%;
+      width: 30px;
+      height: 30px;
+      animation: spin 1s linear infinite;
+      margin: 0 auto;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
   </style>
 </head>
 <body>
   <div class="container">
-    <h2>Banking Assistant</h2>
+    <h2>🏦 Banking Assistant</h2>
+    
     <select id="language">
       <option value="en-US">English (US)</option>
-      <option value="hi-IN">Hindi (India)</option> <!-- Added Hindi for India -->
+      <option value="hi-IN">Hindi (India)</option>
     </select>
-    <input type="tel" id="phoneNumber" placeholder="Enter Indian phone number (e.g., +919876543210)" required>
-    <button onclick="startConversation()">Call Agent</button>
-    <div id="response" style="margin-top: 20px;"></div>
-    <div id="error" class="error">Please enter a valid Indian phone number (e.g., +919876543210).</div>
+    
+    <input type="tel" id="phoneNumber" placeholder="Enter phone number (e.g., +919876543210)" required>
+    
+    <div class="button-container">
+      <button class="test-btn" onclick="testAuthentication()">Test Auth</button>
+      <button class="call-btn" onclick="makePhoneCall()" id="callButton">📞 Call Agent</button>
+    </div>
+    
+    <div id="loading" class="loading">
+      <div class="spinner"></div>
+      <p>Processing...</p>
+    </div>
+    
+    <div id="response" class="response"></div>
+    <div id="error" class="error"></div>
   </div>
 
   <script>
     const apiUrl = 'https://web-production-5bfc.up.railway.app';
+    
+    // API endpoints
     const authEndpoint = '/authenticate_customer';
+    const callEndpoint = '/make_call';
     const accountsEndpoint = '/customer/{customer_id}/accounts';
 
-    function isValidIndianPhoneNumber(phone) {
-      const indianPhoneRegex = /^\+91[0-9]{10}$/;
-      return indianPhoneRegex.test(phone);
+    function isValidPhoneNumber(phone) {
+      // Support multiple formats: +919876543210, +1234567890
+      const phoneRegex = /^\+[1-9]\d{10,14}$/;
+      return phoneRegex.test(phone);
     }
 
-    async function authenticate(phoneNumber) {
-      const response = await fetch(`${apiUrl}${authEndpoint}`, {
-        method: 'POST',
-        headers: {
-          'Authorization': 'Bearer banking_agent_secure_token_2025',
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ phone_number: phoneNumber })
-      });
-      if (!response.ok) throw new Error('Authentication failed');
-      return response.json();
+    function showLoading(show = true) {
+      document.getElementById('loading').style.display = show ? 'block' : 'none';
+      document.getElementById('callButton').disabled = show;
     }
 
-    async function getAccounts(customerId) {
-      const response = await fetch(`${apiUrl}${accountsEndpoint.replace('{customer_id}', customerId)}`, {
-        method: 'GET',
-        headers: {
-          'Authorization': 'Bearer banking_agent_secure_token_2025'
-        }
-      });
-      if (!response.ok) throw new Error('Failed to fetch accounts');
-      return response.json();
-    }
-
-    function speak(text, lang) {
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = lang;
-      utterance.volume = 1;
-      utterance.rate = 1;
-      utterance.pitch = 1;
-      window.speechSynthesis.speak(utterance);
-    }
-
-    async function startConversation() {
-      const phoneNumber = document.getElementById('phoneNumber').value.trim();
-      const lang = document.getElementById('language').value;
+    function showResponse(message, isError = false) {
       const responseDiv = document.getElementById('response');
       const errorDiv = document.getElementById('error');
-
-      if (!isValidIndianPhoneNumber(phoneNumber)) {
+      
+      if (isError) {
+        errorDiv.innerHTML = message;
         errorDiv.style.display = 'block';
-        speak('Please enter a valid Indian phone number starting with +91.', lang);
-        return;
-      }
-      errorDiv.style.display = 'none';
-
-      try {
-        responseDiv.innerText = 'Authenticating...';
-        speak('Authenticating, please wait.', lang);
-        const authResult = await authenticate(phoneNumber);
-        const customerId = authResult.customer_id;
-        const customerName = authResult.name;
-
-        responseDiv.innerText = `Welcome, ${customerName}!`;
-        speak(`Welcome, ${customerName}! Fetching your balances.`, lang);
-
-        const accountsResult = await getAccounts(customerId);
-        const balances = accountsResult.accounts.map(acc => `${acc.account_type} balance: ${acc.balance} ${acc.currency}`).join(', ');
-        responseDiv.innerText += `\n${balances}`;
-        speak(`Your account balances are: ${balances}.`, lang);
-
-      } catch (error) {
-        responseDiv.innerText = `Error: ${error.message}`;
-        speak(`Sorry, an error occurred: ${error.message}. Please try again.`, lang);
+        responseDiv.classList.remove('show');
+      } else {
+        responseDiv.innerHTML = message;
+        responseDiv.classList.add('show');
+        errorDiv.style.display = 'none';
       }
     }
+
+    // Test authentication only (for debugging)
+    async function testAuthentication() {
+      const phoneNumber = document.getElementById('phoneNumber').value.trim();
+      const lang = document.getElementById('language').value;
+
+      if (!isValidPhoneNumber(phoneNumber)) {
+        showResponse('Please enter a valid phone number (e.g., +919876543210)', true);
+        return;
+      }
+
+      try {
+        showLoading(true);
+        showResponse('Authenticating...', false);
+
+        // Try authentication without Bearer token first
+        let response = await fetch(`${apiUrl}${authEndpoint}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ phone_number: phoneNumber })
+        });
+
+        if (!response.ok) {
+          // If that fails, try with Bearer token
+          response = await fetch(`${apiUrl}${authEndpoint}`, {
+            method: 'POST',
+            headers: {
+              'Authorization': 'Bearer banking_agent_secure_token_2025',
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ phone_number: phoneNumber })
+          });
+        }
+
+        if (!response.ok) {
+          throw new Error(`Authentication failed: ${response.status} ${response.statusText}`);
+        }
+
+        const authResult = await response.json();
+        
+        showResponse(`
+          <div class="success">✅ Authentication Successful!</div>
+          <strong>Customer:</strong> ${authResult.name}<br>
+          <strong>Customer ID:</strong> ${authResult.customer_id}<br>
+          <strong>Message:</strong> ${authResult.message}
+        `);
+
+      } catch (error) {
+        console.error('Authentication error:', error);
+        showResponse(`❌ Authentication Error: ${error.message}`, true);
+      } finally {
+        showLoading(false);
+      }
+    }
+
+    // Make actual phone call through ElevenLabs
+    async function makePhoneCall() {
+      const phoneNumber = document.getElementById('phoneNumber').value.trim();
+      const lang = document.getElementById('language').value;
+
+      if (!isValidPhoneNumber(phoneNumber)) {
+        showResponse('Please enter a valid phone number (e.g., +919876543210)', true);
+        return;
+      }
+
+      try {
+        showLoading(true);
+        showResponse('Initiating call through ElevenLabs...', false);
+
+        // First authenticate the customer (optional)
+        let customerId = null;
+        try {
+          const authResponse = await fetch(`${apiUrl}${authEndpoint}`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ phone_number: phoneNumber })
+          });
+
+          if (authResponse.ok) {
+            const authResult = await authResponse.json();
+            customerId = authResult.customer_id;
+          }
+        } catch (authError) {
+          console.log('Authentication failed, proceeding without customer ID');
+        }
+
+        // Make the call
+        const callResponse = await fetch(`${apiUrl}${callEndpoint}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ 
+            phone_number: phoneNumber,
+            customer_id: customerId
+          })
+        });
+
+        if (!callResponse.ok) {
+          const errorText = await callResponse.text();
+          throw new Error(`Call failed: ${callResponse.status} - ${errorText}`);
+        }
+
+        const callResult = await callResponse.json();
+        
+        showResponse(`
+          <div class="success">📞 Call Initiated Successfully!</div>
+          <strong>Phone Number:</strong> ${phoneNumber}<br>
+          <strong>Call ID:</strong> ${callResult.call_id || 'N/A'}<br>
+          <strong>Status:</strong> ${callResult.status}<br>
+          <strong>Message:</strong> ${callResult.message}<br>
+          ${customerId ? `<strong>Customer ID:</strong> ${customerId}` : ''}
+          <br><br>
+          <em>The AI agent should call you shortly at ${phoneNumber}</em>
+        `);
+
+      } catch (error) {
+        console.error('Call error:', error);
+        showResponse(`❌ Call Failed: ${error.message}`, true);
+      } finally {
+        showLoading(false);
+      }
+    }
+
+    // Optional: Add call status checking
+    async function checkCallStatus(callId) {
+      try {
+        const response = await fetch(`${apiUrl}/call_status/${callId}`);
+        if (response.ok) {
+          const statusData = await response.json();
+          console.log('Call status:', statusData);
+          return statusData;
+        }
+      } catch (error) {
+        console.error('Failed to check call status:', error);
+      }
+    }
+
+    // Handle Enter key press
+    document.getElementById('phoneNumber').addEventListener('keypress', function(e) {
+      if (e.key === 'Enter') {
+        makePhoneCall();
+      }
+    });
   </script>
 </body>
 </html>

@@ -3,11 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Banking Agent Interface</title>
+  <title>Banking Assistant</title>
   <style>
     body { font-family: Arial, sans-serif; text-align: center; margin-top: 50px; }
     .container { max-width: 500px; margin: auto; }
     select, input, button { padding: 10px; margin: 5px; }
+    .error { color: red; display: none; }
   </style>
 </head>
 <body>
@@ -15,18 +16,23 @@
     <h2>Banking Assistant</h2>
     <select id="language">
       <option value="en-US">English (US)</option>
-      <option value="es-ES">Spanish</option>
-      <option value="fr-FR">French</option>
+      <option value="hi-IN">Hindi (India)</option> <!-- Added Hindi for India -->
     </select>
-    <input type="text" id="phoneNumber" placeholder="Enter phone number (e.g., +1234567890)" required>
+    <input type="tel" id="phoneNumber" placeholder="Enter Indian phone number (e.g., +919876543210)" required>
     <button onclick="startConversation()">Call Agent</button>
     <div id="response" style="margin-top: 20px;"></div>
+    <div id="error" class="error">Please enter a valid Indian phone number (e.g., +919876543210).</div>
   </div>
 
   <script>
     const apiUrl = 'https://web-production-5bfc.up.railway.app';
     const authEndpoint = '/authenticate_customer';
     const accountsEndpoint = '/customer/{customer_id}/accounts';
+
+    function isValidIndianPhoneNumber(phone) {
+      const indianPhoneRegex = /^\+91[0-9]{10}$/;
+      return indianPhoneRegex.test(phone);
+    }
 
     async function authenticate(phoneNumber) {
       const response = await fetch(`${apiUrl}${authEndpoint}`, {
@@ -55,22 +61,24 @@
     function speak(text, lang) {
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.lang = lang;
-      utterance.volume = 1; // 0 to 1
-      utterance.rate = 1; // Speed
-      utterance.pitch = 1; // Pitch
+      utterance.volume = 1;
+      utterance.rate = 1;
+      utterance.pitch = 1;
       window.speechSynthesis.speak(utterance);
     }
 
     async function startConversation() {
-      const phoneNumber = document.getElementById('phoneNumber').value;
+      const phoneNumber = document.getElementById('phoneNumber').value.trim();
       const lang = document.getElementById('language').value;
       const responseDiv = document.getElementById('response');
+      const errorDiv = document.getElementById('error');
 
-      if (!phoneNumber) {
-        responseDiv.innerText = 'Please enter a phone number.';
-        speak('Please enter a phone number.', lang);
+      if (!isValidIndianPhoneNumber(phoneNumber)) {
+        errorDiv.style.display = 'block';
+        speak('Please enter a valid Indian phone number starting with +91.', lang);
         return;
       }
+      errorDiv.style.display = 'none';
 
       try {
         responseDiv.innerText = 'Authenticating...';

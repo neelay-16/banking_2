@@ -241,8 +241,13 @@ async def make_call(call_data: CallRequest):
                 "note": "This is a mock response. Set ELEVENLABS_API_KEY and ELEVENLABS_AGENT_ID environment variables for real calls."
             }
         
-        # Real ElevenLabs API call
-        url = f"https://api.elevenlabs.io/v1/convai/agents/{ELEVENLABS_AGENT_ID}/call"
+        # Try different possible API endpoints based on ElevenLabs documentation
+        possible_urls = [
+            f"https://api.elevenlabs.io/v1/convai/agents/{ELEVENLABS_AGENT_ID}/phone",
+            f"https://api.elevenlabs.io/v1/convai/agents/{ELEVENLABS_AGENT_ID}/call",
+            f"https://api.elevenlabs.io/v1/agents/{ELEVENLABS_AGENT_ID}/phone",
+            f"https://api.elevenlabs.io/v1/agents/{ELEVENLABS_AGENT_ID}/call"
+        ]
         
         headers = {
             "xi-api-key": ELEVENLABS_API_KEY,
@@ -257,39 +262,69 @@ async def make_call(call_data: CallRequest):
                 customer_context = {
                     "customer_name": customer["name"],
                     "customer_id": call_data.customer_id,
-                    "phone_number": call_data.phone_number
+                    "phone_number": call_data.phone_number,
+                    "accounts": customer["accounts"]
                 }
         
-        # Payload for ElevenLabs API
-        payload = {
-            "phone_number": call_data.phone_number,
-            "context": customer_context
-        }
-        
-        print(f"Calling ElevenLabs API with payload: {payload}")
-        
-        # Make the API call to ElevenLabs
-        response = requests.post(url, headers=headers, json=payload, timeout=30)
-        
-        print(f"ElevenLabs response status: {response.status_code}")
-        print(f"ElevenLabs response: {response.text}")
-        
-        if response.status_code == 200:
-            elevenlabs_response = response.json()
-            return {
-                "success": True,
-                "message": f"Call initiated to {call_data.phone_number}",
-                "call_id": elevenlabs_response.get("call_id", f"EL_CALL_{int(datetime.now().timestamp())}"),
-                "status": "initiated",
-                "elevenlabs_response": elevenlabs_response
+        # Try different payload formats
+        payloads_to_try = [
+            {
+                "phone_number": call_data.phone_number,
+                "context": customer_context
+            },
+            {
+                "to": call_data.phone_number,
+                "agent_id": ELEVENLABS_AGENT_ID,
+                "context": customer_context
+            },
+            {
+                "phone_number": call_data.phone_number,
+                "agent_id": ELEVENLABS_AGENT_ID,
+                "metadata": customer_context
             }
-        else:
-            error_detail = response.text
-            print(f"ElevenLabs API error: {error_detail}")
-            raise HTTPException(
-                status_code=response.status_code, 
-                detail=f"ElevenLabs API error: {error_detail}"
-            )
+        ]
+        
+        # Try each combination of URL and payload
+        for url in possible_urls:
+            for payload in payloads_to_try:
+                try:
+                    print(f"Trying URL: {url}")
+                    print(f"With payload: {payload}")
+                    
+                    # Make the API call to ElevenLabs
+                    response = requests.post(url, headers=headers, json=payload, timeout=30)
+                    
+                    print(f"ElevenLabs response status: {response.status_code}")
+                    print(f"ElevenLabs response: {response.text}")
+                    
+                    if response.status_code == 200:
+                        elevenlabs_response = response.json()
+                        return {
+                            "success": True,
+                            "message": f"Call initiated to {call_data.phone_number}",
+                            "call_id": elevenlabs_response.get("call_id", f"EL_CALL_{int(datetime.now().timestamp())}"),
+                            "status": "initiated",
+                            "elevenlabs_response": elevenlabs_response,
+                            "endpoint_used": url
+                        }
+                    elif response.status_code == 404:
+                        # Continue trying other combinations
+                        continue
+                    else:
+                        # For non-404 errors, we might have the right endpoint but wrong payload
+                        error_detail = response.text
+                        print(f"ElevenLabs API error (non-404): {error_detail}")
+                        # Continue trying but log this
+                        
+                except requests.exceptions.RequestException as req_e:
+                    print(f"Request error for {url}: {str(req_e)}")
+                    continue
+        
+        # If we get here, all attempts failed
+        raise HTTPException(
+            status_code=404, 
+            detail="Could not find correct ElevenLabs API endpoint. Please check your Agent ID and API documentation."
+        )
             
     except requests.exceptions.RequestException as e:
         print(f"Network error: {str(e)}")
@@ -298,6 +333,7 @@ async def make_call(call_data: CallRequest):
         print(f"Call error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to initiate call: {str(e)}")
 
+     
 # Optional: Add endpoint to check call status
 @app.get("/call_status/{call_id}")
 async def get_call_status(call_id: str):

@@ -216,7 +216,8 @@ async def get_fee_information(token: str = Depends(verify_agent_token)):
     return BANKING_KNOWLEDGE["fees"]
 
 # Mount the static files directory (moved here to ensure API routes take priority)
-app.mount("/", StaticFiles(directory="static", html=True), name="static")
+# At the end of route definitions
+app.mount("/static", StaticFiles(directory="static", html=True), name="static")
 
 # For Railway deployment
 if __name__ == "__main__":
